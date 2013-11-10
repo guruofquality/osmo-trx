@@ -20,6 +20,7 @@
 #include "radioDevice.h"
 #include "radioVector.h"
 #include "radioClock.h"
+#include "Resampler.h"
 
 static const unsigned gSlotLen = 148;      ///< number of symbols per slot, not counting guard periods
 
@@ -37,6 +38,8 @@ protected:
   size_t mSPSTx;
   size_t mSPSRx;
   size_t mChans;
+  size_t mMIMO;
+
   std::vector<signalVector *> sendBuffer;
   std::vector<signalVector *> recvBuffer;
   unsigned sendCursor;
@@ -90,7 +93,7 @@ public:
   /** constructor */
   RadioInterface(RadioDevice* wRadio = NULL,
 		 int receiveOffset = 3,
-		 size_t sps = 4, size_t chans = 1,
+		 size_t sps = 4, size_t chans = 1, size_t diversity = 1,
 		 GSM::Time wStartTime = GSM::Time(0));
 
   /** destructor */
@@ -172,6 +175,28 @@ public:
 		       GSM::Time wStartTime = GSM::Time(0));
 
   ~RadioInterfaceResamp();
+
+  bool init(int type);
+  void close();
+};
+
+class RadioInterfaceDiversity : public RadioInterface {
+
+private:
+  void pushBuffer();
+  void pullBuffer();
+
+  std::vector<Resampler *> dnsamplers;
+  signalVector *outerRecvBuffer;
+
+public:
+
+  RadioInterfaceDiversity(RadioDevice* wRadio,
+                          size_t chans, size_t diversity,
+                          size_t wSPS = 4, int receiveOffset = 3,
+                          GSM::Time wStartTime = GSM::Time(0));
+
+  ~RadioInterfaceDiversity();
 
   bool init(int type);
   void close();

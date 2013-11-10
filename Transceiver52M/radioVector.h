@@ -39,6 +39,24 @@ private:
 	GSM::Time mTime;
 };
 
+class mimoVector {
+public:
+	mimoVector(size_t chans, GSM::Time& wTime);
+	mimoVector(size_t size, size_t chans, GSM::Time& wTime);
+	~mimoVector();
+
+	GSM::Time getTime() const;
+	void setTime(const GSM::Time& wTime);
+	bool operator>(const mimoVector& other) const;
+
+	signalVector *getVector(size_t chan);
+	bool setVector(signalVector *vector, size_t chan);
+	size_t chans() { return vectors.size(); }
+private:
+	std::vector<signalVector *> vectors;
+	GSM::Time mTime;
+};
+
 class noiseVector : std::vector<float> {
 public:
 	noiseVector(size_t len = 0);
@@ -49,7 +67,7 @@ private:
 	std::vector<float>::iterator it;
 };
 
-class VectorFIFO : public InterthreadQueue<radioVector> { };
+class VectorFIFO : public InterthreadQueue<mimoVector> { };
 
 class VectorQueue : public InterthreadPriorityQueue<radioVector> {
 public:

@@ -596,8 +596,8 @@ int uhd_device::open(const std::string &args, bool extref)
 	rx_spp = rx_stream->get_max_num_samps();
 
 	// Set rates
-	double _tx_rate = select_rate(dev_type, sps);
-	double _rx_rate = _tx_rate / sps;
+	double _tx_rate = select_rate(dev_type, 4);
+	double _rx_rate = _tx_rate;
 	if ((_tx_rate > 0.0) && (set_rates(_tx_rate, _rx_rate) < 0))
 		return -1;
 

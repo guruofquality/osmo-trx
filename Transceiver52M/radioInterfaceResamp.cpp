@@ -59,7 +59,7 @@ RadioInterfaceResamp::RadioInterfaceResamp(RadioDevice *wRadio,
 					   int wReceiveOffset,
 					   size_t sps, size_t chan,
 					   GSM::Time wStartTime)
-	: RadioInterface(wRadio, wReceiveOffset, sps, chan, wStartTime),
+	: RadioInterface(wRadio, wReceiveOffset, sps, chan, 1, wStartTime),
 	  innerSendBuffer(NULL), outerSendBuffer(NULL),
 	  innerRecvBuffer(NULL), outerRecvBuffer(NULL)
 {

@@ -326,12 +326,14 @@ SoftVector *Transceiver::pullRadioVector(GSM::Time &wTime, int &RSSI,
   bool needDFE = false;
   bool success = false;
   complex amp = 0.0;
-  float TOA = 0.0, avg = 0.0;
+  float TOA = 0.0, pow = 0.0, max = 0.0, avg = 0.0;
+  int max_i = 0;
   TransceiverState *state = &mStates[chan];
+  signalVector *burst;
 
-  radioVector *rxBurst = (radioVector *) mReceiveFIFO[chan]->read();
-
-  if (!rxBurst) return NULL;
+  mimoVector *rxBurst = (mimoVector *) mReceiveFIFO[chan]->read();
+  if (!rxBurst)
+    return NULL;
 
   int timeslot = rxBurst->getTime().TN();
 
@@ -342,9 +344,17 @@ SoftVector *Transceiver::pullRadioVector(GSM::Time &wTime, int &RSSI,
     return NULL;
   }
 
-  signalVector *vectorBurst = rxBurst;
+  for (size_t i = 0; i < rxBurst->chans(); i++) {
+    energyDetect(*rxBurst->getVector(i), 20 * mSPSRx, 0.0, &pow);
+    if (pow > max) {
+      max = pow;
+      max_i = i;
+    }
+    avg += pow;
+  }
 
-  energyDetect(*vectorBurst, 20 * mSPSRx, 0.0, &avg);
+  burst = rxBurst->getVector(max_i);
+  avg = avg / rxBurst->chans();
 
   // Update noise level
   mNoiseLev = mNoises.avg();
@@ -371,7 +381,7 @@ SoftVector *Transceiver::pullRadioVector(GSM::Time &wTime, int &RSSI,
     }
     if (!needDFE) estimateChannel = false;
     float chanOffset;
-    success = analyzeTrafficBurst(*vectorBurst,
+    success = analyzeTrafficBurst(*burst,
                                   mTSC,
                                   5.0,
                                   mSPSRx,
@@ -403,24 +413,24 @@ SoftVector *Transceiver::pullRadioVector(GSM::Time &wTime, int &RSSI,
   }
   else {
     // RACH burst
-    if ((success = detectRACHBurst(*vectorBurst, 6.0, mSPSRx, &amp, &TOA)))
+    if ((success = detectRACHBurst(*burst, 6.0, mSPSRx, &amp, &TOA)))
       state->chanResponse[timeslot] = NULL;
     else
       mNoises.insert(avg);
   }
 
   // demodulate burst
-  SoftVector *burst = NULL;
+  SoftVector *bits = NULL;
   if ((rxBurst) && (success)) {
     if ((corrType==RACH) || (!needDFE)) {
-      burst = demodulateBurst(*vectorBurst, mSPSRx, amp, TOA);
+      bits = demodulateBurst(*burst, mSPSRx, amp, TOA);
     } else {
-      scaleVector(*vectorBurst, complex(1.0, 0.0) / amp);
-      burst = equalizeBurst(*vectorBurst,
-			    TOA - state->chanRespOffset[timeslot],
-			    mSPSRx,
-			    *state->DFEForward[timeslot],
-			    *state->DFEFeedback[timeslot]);
+      scaleVector(*burst, complex(1.0, 0.0) / amp);
+      bits = equalizeBurst(*burst,
+                           TOA - state->chanRespOffset[timeslot],
+                           mSPSRx,
+                           *state->DFEForward[timeslot],
+                           *state->DFEFeedback[timeslot]);
     }
     wTime = rxBurst->getTime();
     RSSI = (int) floor(20.0*log10(rxFullScale/avg));
@@ -429,8 +439,7 @@ SoftVector *Transceiver::pullRadioVector(GSM::Time &wTime, int &RSSI,
   }
 
   delete rxBurst;
-
-  return burst;
+  return bits;
 }
 
 void Transceiver::start()

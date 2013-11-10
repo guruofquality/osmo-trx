@@ -51,6 +51,58 @@ bool radioVector::operator>(const radioVector& other) const
 	return mTime > other.mTime;
 }
 
+mimoVector::mimoVector(size_t size, size_t chans, GSM::Time& wTime)
+	: vectors(chans, NULL), mTime(wTime)
+{
+	for (size_t i = 0; i < vectors.size(); i++)
+		vectors[i] = new signalVector(size);
+}
+
+mimoVector::mimoVector(size_t chans, GSM::Time& wTime)
+	: vectors(chans, NULL), mTime(wTime)
+{
+}
+
+mimoVector::~mimoVector()
+{
+	for (size_t i = 0; i < vectors.size(); i++) {
+		delete vectors[i];
+		vectors[i] = NULL;
+	}
+}
+
+GSM::Time mimoVector::getTime() const
+{
+	return mTime;
+}
+
+void mimoVector::setTime(const GSM::Time& wTime)
+{
+	mTime = wTime;
+}
+
+bool mimoVector::operator>(const mimoVector& other) const
+{
+	return mTime > other.mTime;
+}
+
+signalVector *mimoVector::getVector(size_t chan)
+{
+	if (chan >= vectors.size())
+		return NULL;
+
+	return vectors[chan];
+}
+
+bool mimoVector::setVector(signalVector *vector, size_t chan)
+{
+	if (chan >= vectors.size())
+		return false;
+
+	delete vectors[chan];
+	vectors[chan] = vector;
+}
+
 noiseVector::noiseVector(size_t n)
 {
 	this->resize(n);
