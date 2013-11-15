@@ -89,6 +89,7 @@ Transceiver::Transceiver(int wBasePort,
 
   mRxLowerLoopThread = new Thread(32768);
   mTxLowerLoopThread = new Thread(32768);
+  mClockLoopThread = new Thread(32768);
 
   mTransmitDeadlineClock = startTime;
   mLastClockUpdateTime = startTime;
@@ -564,6 +565,8 @@ void Transceiver::driveControl(size_t chan)
                                   TxLowerLoopAdapter,(void*) this);
         mRxLowerLoopThread->start((void * (*)(void*))
                                   RxLowerLoopAdapter,(void*) this);
+        mClockLoopThread->start((void * (*)(void*))
+                                ClockLoopAdapter,(void*) this);
 
         for (size_t i = 0; i < mChans; i++) {
           TransceiverChannel *chan = new TransceiverChannel(this, i);
@@ -724,11 +727,6 @@ bool Transceiver::driveTxPriorityQueue(size_t chan)
   LOG(DEBUG) << "mTransmitDeadlineClock " << mTransmitDeadlineClock
 		<< " mLastClockUpdateTime " << mLastClockUpdateTime;
 
-  if (!chan) {
-    if (mTransmitDeadlineClock > mLastClockUpdateTime + GSM::Time(216,0))
-      writeClockInterface();
-  }
-
   LOG(DEBUG) << "rcvd. burst at: " << GSM::Time(frameNum,timeSlot);
   
   int RSSI = (int) buffer[5];
@@ -804,7 +802,7 @@ void Transceiver::driveTxFIFO()
 
 
   RadioClock *radioClock = (mRadioInterface->getClock());
-  
+
   if (mOn) {
     //radioClock->wait(); // wait until clock updates
     LOG(DEBUG) << "radio clock " << radioClock->get();
@@ -841,7 +839,15 @@ void Transceiver::driveTxFIFO()
   radioClock->wait();
 }
 
+void Transceiver::driveClockIndications()
+{
+  RadioClock *radioClock = (mRadioInterface->getClock());
 
+  radioClock->wait();
+
+  if (mTransmitDeadlineClock > mLastClockUpdateTime + GSM::Time(216,0))
+    writeClockInterface();
+}
 
 void Transceiver::writeClockInterface()
 {
@@ -854,7 +860,17 @@ void Transceiver::writeClockInterface()
   mClockSocket->write(command, strlen(command) + 1);
 
   mLastClockUpdateTime = mTransmitDeadlineClock;
+}
 
+void *ClockLoopAdapter(Transceiver *transceiver)
+{
+  transceiver->setPriority(0.42);
+
+  while (1) {
+    transceiver->driveClockIndications();
+    pthread_testcancel();
+  }
+  return NULL;
 }
 
 void *RxUpperLoopAdapter(TransceiverChannel *chan)
@@ -863,8 +879,6 @@ void *RxUpperLoopAdapter(TransceiverChannel *chan)
   size_t num = chan->num;
 
   delete chan;
-
-  trx->setPriority(0.42);
 
   while (1) {
     trx->driveReceiveFIFO(num);

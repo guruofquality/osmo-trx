@@ -100,6 +100,7 @@ private:
   std::vector<Thread *> mRxServiceLoopThreads;  ///< thread to pull bursts into receive FIFO
   Thread *mRxLowerLoopThread;                   ///< thread to pull bursts into receive FIFO
   Thread *mTxLowerLoopThread;                   ///< thread to push bursts into transmit FIFO
+  Thread *mClockLoopThread;
   std::vector<Thread *> mControlServiceLoopThreads;         ///< thread to process control messages from GSM core
   std::vector<Thread *> mTxPriorityQueueServiceLoopThreads; ///< thread to process transmit bursts from GSM core
 
@@ -232,6 +233,8 @@ protected:
   /** drive handling of control messages from GSM core */
   void driveControl(size_t chan);
 
+  void driveClockIndications();
+
   /**
     drive modulation and sorting of GSM bursts from GSM core
     @return true if a burst was transferred successfully
@@ -241,6 +244,8 @@ protected:
   friend void *RxUpperLoopAdapter(TransceiverChannel *);
 
   friend void *TxUpperLoopAdapter(TransceiverChannel *);
+
+  friend void *ClockLoopAdapter(Transceiver *);
 
   friend void *RxLowerLoopAdapter(Transceiver *);
 
@@ -261,6 +266,7 @@ void *RxUpperLoopAdapter(TransceiverChannel *);
 /** Main drive threads */
 void *RxLowerLoopAdapter(Transceiver *);
 void *TxLowerLoopAdapter(Transceiver *);
+void *ClockLoopAdapter(Transceiver *);
 
 /** control message handler thread loop */
 void *ControlServiceLoopAdapter(TransceiverChannel *);
