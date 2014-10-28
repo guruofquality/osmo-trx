@@ -26,10 +26,16 @@
 #include <uhd/property_tree.hpp>
 #include <uhd/usrp/multi_usrp.hpp>
 #include <uhd/utils/thread_priority.hpp>
+#include <uhd/utils/tasks.hpp>
 #include <uhd/utils/msg.hpp>
+#include <boost/bind.hpp>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
+
+#ifdef HAVE_RRD
+#include <rrd.h>
 #endif
 
 #define B2XX_CLK_RT      26e6
@@ -320,6 +326,152 @@ public:
 		ERROR_UNHANDLED = -3,
 	};
 
+	enum detailed_error_code
+	{
+		ERROR_RX_MONOTONIC,
+		ERROR_RX_OVERFLOW,
+		ERROR_RX_TIMEOUT,
+		ERROR_RX_ALIGNMENT,
+		ERROR_RX_TIME_LATE,
+		ERROR_RX_BURST_FAIL,
+		ERROR_RX_BAD_PACKET,
+		ERROR_TX_SEQ_ERROR,
+		ERROR_TX_TIME_LATE,
+		ERROR_TX_UNDERFLOW,
+	};
+
+	void report_error(const uhd::async_metadata_t &md)
+	{
+		switch (md.event_code)
+		{
+		case uhd::async_metadata_t::EVENT_CODE_UNDERFLOW:
+		case uhd::async_metadata_t::EVENT_CODE_UNDERFLOW_IN_PACKET:
+			return this->report_error(ERROR_TX_UNDERFLOW);
+		case uhd::async_metadata_t::EVENT_CODE_SEQ_ERROR:
+		case uhd::async_metadata_t::EVENT_CODE_SEQ_ERROR_IN_BURST:
+			return this->report_error(ERROR_TX_SEQ_ERROR);
+		case uhd::async_metadata_t::EVENT_CODE_TIME_ERROR:
+			return this->report_error(ERROR_TX_TIME_LATE);
+		default: return;
+		}
+	}
+
+	void report_error(const uhd::rx_metadata_t &md)
+	{
+		switch (md.error_code)
+		{
+		case uhd::rx_metadata_t::ERROR_CODE_TIMEOUT:
+			return this->report_error(ERROR_RX_TIMEOUT);
+		case uhd::rx_metadata_t::ERROR_CODE_LATE_COMMAND:
+			return this->report_error(ERROR_RX_TIME_LATE);
+		case uhd::rx_metadata_t::ERROR_CODE_BROKEN_CHAIN:
+			return this->report_error(ERROR_RX_BURST_FAIL);
+		case uhd::rx_metadata_t::ERROR_CODE_OVERFLOW:
+			return this->report_error(ERROR_RX_OVERFLOW);
+		case uhd::rx_metadata_t::ERROR_CODE_ALIGNMENT:
+			return this->report_error(ERROR_RX_ALIGNMENT);
+		case uhd::rx_metadata_t::ERROR_CODE_BAD_PACKET:
+			return this->report_error(ERROR_RX_BAD_PACKET);
+		default: return;
+		}
+	}
+
+	void report_error(const detailed_error_code code)
+	{
+		error_totals[code]++;
+	}
+
+	void dump_rrd_task_init(void)
+	{
+		#ifdef HAVE_RRD
+		rrd_update_secs = 1;
+		rrd_errors_file = "/tmp/osmo-trx-errors.rrd";
+
+		//load this map so we can loop through possible keys
+		error_to_string[ERROR_RX_MONOTONIC] = "rx_monotonic";
+		error_to_string[ERROR_RX_OVERFLOW] = "rx_overflow";
+		error_to_string[ERROR_RX_TIMEOUT] = "rx_timeout";
+		error_to_string[ERROR_RX_ALIGNMENT] = "rx_alignment";
+		error_to_string[ERROR_RX_TIME_LATE] = "rx_time_late";
+		error_to_string[ERROR_RX_BURST_FAIL] = "rx_burst_fail";
+		error_to_string[ERROR_RX_BAD_PACKET] = "rx_bad_packet";
+		error_to_string[ERROR_TX_SEQ_ERROR] = "tx_seq_error";
+		error_to_string[ERROR_TX_TIME_LATE] = "tx_time_late";
+		error_to_string[ERROR_TX_UNDERFLOW] = "tx_underflow";
+
+		//load up rrd creation parameters
+		std::vector<std::string> params;
+		params.push_back("rrdcreate");
+		params.push_back(rrd_errors_file);
+		params.push_back(str(boost::format("--step=%u") % rrd_update_secs));
+		for(std::map<detailed_error_code, std::string>::const_iterator it = error_to_string.begin(); it != error_to_string.end(); ++it)
+		{
+			params.push_back(str(boost::format("DS:%s:COUNTER:10:0:U")%it->second)); //10s heartbeat, 0 minimum, unspecified maximum
+		}
+		params.push_back("RRA:AVERAGE:0:1:259200"); //store average at 1 second steps, 3 days
+
+		//convert to char ** format
+		std::vector<char *> createparams(params.size());
+		for (size_t i = 0; i < params.size(); i++)
+		{
+			createparams[i] = (char*)params[i].c_str();
+		}
+		createparams.push_back(NULL);
+		rrd_create(createparams.size()-1, &createparams[0]);
+
+		//how to plot:
+		std::cout << "How to plot the RRD error data:" << std::endl;
+		std::cout << boost::format("rrdtool graph errors.png \\") << std::endl;
+		std::cout << boost::format("  --end now --start end-3600s --width 800 --height 600 \\") << std::endl;
+		std::string color = "FFFF0000FFAAAA00FF00AA";
+		for(std::map<detailed_error_code, std::string>::const_iterator it = error_to_string.begin(); it != error_to_string.end(); ++it)
+		{
+			std::cout << boost::format("  DEF:%s=%s:%s:AVERAGE LINE1:%s#%s:%s \\") %
+				it->second % rrd_errors_file % it->second % it->second % color.substr(0, 6) % it->second << std::endl;
+			color = color.substr(2) + color.substr(0, 2); //rotate
+		}
+		std::cout << std::endl;
+
+		this->dump_rrd_task = uhd::task::make(boost::bind(&uhd_device::dump_rrd_task_loop, this));
+		#endif
+	}
+
+	void dump_rrd_task_loop(void)
+	{
+		sleep(rrd_update_secs);
+		#ifdef HAVE_RRD
+		//load up rrd update parameters
+		std::vector<std::string> params;
+		params.push_back("rrdupdate");
+		params.push_back(rrd_errors_file);
+		std::string keys, vals;
+		for(std::map<detailed_error_code, std::string>::const_iterator it = error_to_string.begin(); it != error_to_string.end(); ++it)
+		{
+			if (not keys.empty()) keys += ":";
+			if (not vals.empty()) vals += ":";
+			keys += it->second;
+			vals += boost::lexical_cast<std::string>(error_totals[it->first]);
+		}
+		params.push_back("--template="+keys);
+		params.push_back("N:"+vals);
+
+		//convert to char ** format
+		std::vector<char *> updateparams(params.size());
+		for (size_t i = 0; i < params.size(); i++)
+		{
+			updateparams[i] = (char*)params[i].c_str();
+		}
+		updateparams.push_back(NULL);
+		rrd_update(updateparams.size()-1, &updateparams[0]);
+		#endif
+	}
+
+	uhd::task::sptr dump_rrd_task;
+	std::string rrd_errors_file;
+	long rrd_update_secs;
+	std::map<detailed_error_code, unsigned long long> error_totals;
+	std::map<detailed_error_code, std::string> error_to_string;
+
 private:
 	uhd::usrp::multi_usrp::sptr usrp_dev;
 	uhd::tx_streamer::sptr tx_stream;
@@ -410,6 +562,7 @@ uhd_device::uhd_device(size_t sps, size_t chans, bool diversity, double offset)
 	this->chans = chans;
 	this->offset = offset;
 	this->diversity = diversity;
+	this->dump_rrd_task_init();
 }
 
 uhd_device::~uhd_device()
@@ -849,6 +1002,7 @@ void uhd_device::setPriority(float prio)
 
 int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
 {
+	this->report_error(md);
 	uhd::time_spec_t ts;
 	static int err_count = 0;
 
@@ -885,6 +1039,7 @@ int uhd_device::check_rx_md_err(uhd::rx_metadata_t &md, ssize_t num_smpls)
 		LOG(ALERT) << "UHD: Loss of monotonic time";
 		LOG(ALERT) << "Current time: " << ts.get_real_secs() << ", " 
 			   << "Previous time: " << prev_ts.get_real_secs();
+		this->report_error(ERROR_RX_MONOTONIC);
 		return ERROR_TIMING;
 	} else {
 		prev_ts = ts;
@@ -1159,6 +1314,8 @@ bool uhd_device::recv_async_msg()
 	uhd::async_metadata_t md;
 	if (!usrp_dev->get_device()->recv_async_msg(md))
 		return false;
+
+	this->report_error(md);
 
 	// Assume that any error requires resynchronization
 	if (md.event_code != uhd::async_metadata_t::EVENT_CODE_BURST_ACK) {

@@ -32,7 +32,7 @@ AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE
 
 dnl Linux kernel KBuild style compile messages
-m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+dnl m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 AM_PROG_AS
 AC_PROG_CXX
@@ -99,6 +99,8 @@ AS_IF([test "x$with_usrp1" != "xyes"],[
 AS_IF([test "x$with_singledb" = "xyes"], [
     AC_DEFINE(SINGLEDB, 1, Define to 1 for single daughterboard)
 ])
+
+PKG_CHECK_MODULES([RRD], [librrd], [AC_DEFINE([HAVE_RRD], [1], [Use librrd])])
 
 # Find and define supported SIMD extensions
 AX_EXT

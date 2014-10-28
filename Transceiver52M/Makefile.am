@@ -89,6 +89,9 @@ osmo_trx_LDADD = \
 	$(GSM_LA) \
 	$(COMMON_LA) $(SQLITE_LA)
 
+AM_CPPFLAGS += $(RRD_CFLAGS)
+osmo_trx_LDADD += $(RRD_LIBS)
+
 if USRP1 
 libtransceiver_la_SOURCES += USRPDevice.cpp
 osmo_trx_LDADD += $(USRP_LIBS)
