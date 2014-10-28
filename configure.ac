@@ -32,7 +32,7 @@ AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE
 
 dnl Linux kernel KBuild style compile messages
-dnl m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 AM_PROG_AS
 AC_PROG_CXX
