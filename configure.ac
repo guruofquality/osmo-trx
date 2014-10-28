@@ -100,7 +100,7 @@ AS_IF([test "x$with_singledb" = "xyes"], [
     AC_DEFINE(SINGLEDB, 1, Define to 1 for single daughterboard)
 ])
 
-PKG_CHECK_MODULES([RRD], [librrd], [AC_DEFINE([HAVE_RRD], [1], [Use librrd])])
+PKG_CHECK_MODULES([RRD], [librrd], [AC_DEFINE([HAVE_RRD], [1], [Use librrd])], [1])
 
 # Find and define supported SIMD extensions
 AX_EXT
